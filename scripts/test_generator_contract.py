@@ -25,7 +25,8 @@ def main() -> int:
             else:
                 binary = source / ("betterdesk.exe" if platform == "windows" else "betterdesk")
                 source.mkdir(parents=True)
-            binary.write_bytes(b"B" * (100 * 1024))
+            # Linux uses a small runner, like the real Flutter build (~44 KiB)
+            binary.write_bytes(b"B" * ((44 if platform == "linux" else 100) * 1024))
             destination = out / folder
             entries.append(pack_one(source, destination, platform, arch))
 
@@ -41,7 +42,9 @@ def main() -> int:
         validate_manifest(out, manifest)
         assert not list(out.rglob("custom.txt"))
         assert (out / "windows-x86_64" / ".custom-txt-here").is_file()
-        assert list((out / "macos-x86_64").rglob(".custom-txt-here"))
+        assert (out / "macos-x86_64" / "BetterDesk.app" / "Contents" / "Resources" / ".custom-txt-here").is_file()
+        assert (out / "linux-x86_64" / ".custom-txt-here").is_file()
+        assert (out / "linux-x86_64" / "betterdesk").stat().st_size > 100 * 1024
         shutil.rmtree(root)
     print("Generator contract: OK")
     return 0

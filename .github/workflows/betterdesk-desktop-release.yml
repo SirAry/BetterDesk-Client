@@ -228,11 +228,12 @@ jobs:
               cp "${deb}" "dist/clean/betterdesk-${VERSION}-linux-${arch}.deb"
               mkdir -p "dist/linux-${arch}"
               if command -v dpkg-deb >/dev/null; then
-                dpkg-deb -x "${deb}" "dist/linux-${arch}/root"
-                bin=$(find "dist/linux-${arch}/root" -type f \( -name betterdesk -o -name rustdesk \) | head -n1 || true)
+                dpkg-deb -x "${deb}" "dist-raw/linux-${arch}-root"
+                bin=$(find "dist-raw/linux-${arch}-root" -type f \( -name betterdesk -o -name rustdesk \) | head -n1 || true)
                 if [ -n "${bin}" ]; then
-                  stage="dist/linux-${arch}/portable"
-                  mkdir -p "${stage}"
+                  # Flat portable tree: the console Generator puts custom.txt and its
+                  # install script at the template root, beside the binary.
+                  stage="dist/linux-${arch}"
                   cp -a "$(dirname "${bin}")/." "${stage}/"
                   if [ -f "${stage}/rustdesk" ] && [ ! -f "${stage}/betterdesk" ]; then
                     mv "${stage}/rustdesk" "${stage}/betterdesk"

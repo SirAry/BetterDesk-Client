@@ -40,6 +40,9 @@ PLATFORMS = (
 )
 PLATFORM_KEYS = tuple(f"{platform}-{arch}" for platform, arch, _ in PLATFORMS)
 MIN_BINARY_SIZE = 32 * 1024
+# Console clientTemplateWorker._templateHasBinary only accepts a betterdesk/rustdesk
+# file larger than 100 KiB, but the Flutter Linux runner is ~44 KiB.
+CONSOLE_MIN_BINARY_SIZE = 128 * 1024
 
 
 def sha256_file(path: Path) -> str:
@@ -59,6 +62,14 @@ def copy_tree(src: Path, dst: Path) -> None:
 def ensure_no_custom_txt(root: Path) -> None:
     for p in root.rglob("custom.txt"):
         p.unlink()
+
+
+def pad_binary(path: Path, size: int) -> None:
+    """Append zeros up to size; the ELF loader ignores bytes past the mapped segments."""
+    missing = size - path.stat().st_size
+    if missing > 0:
+        with path.open("ab") as f:
+            f.write(b"\0" * missing)
 
 
 def _relative_file(root: Path, names: tuple[str, ...]) -> str:
@@ -150,19 +161,28 @@ def pack_one(src: Path, out_dir: Path, platform: str, arch: str) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     copy_tree(src, out_dir)
     ensure_no_custom_txt(out_dir)
+    for stale in out_dir.rglob(".custom-txt-here"):
+        stale.unlink()
 
     # Marker for console worker: where to place custom.txt
     if platform == "macos":
         app = next(out_dir.rglob("*.app"), None)
         if app is not None:
-            target = app / "Contents" / "MacOS"
+            # load_custom_client() reads <exe dir>/../Resources/custom.txt on macOS
+            target = app / "Contents" / "Resources"
             target.mkdir(parents=True, exist_ok=True)
-            (target / ".custom-txt-here").write_text("place custom.txt beside betterdesk binary\n")
-            inject = str(Path("Contents") / "MacOS" / "custom.txt")
+            (target / ".custom-txt-here").write_text("place custom.txt in Contents/Resources\n")
+            inject = str(Path("Contents") / "Resources" / "custom.txt")
         else:
             (out_dir / ".custom-txt-here").write_text("place custom.txt in this directory\n")
             inject = "custom.txt"
     else:
+        # The console writes custom.txt and its install script to the template root,
+        # so the binary must live there too (flat portable layout).
+        if Path(binary_path).parent != Path("."):
+            raise ValueError(f"{src}: {platform} binary must be at the template root, got {binary_path}")
+        if platform == "linux":
+            pad_binary(out_dir / binary_path, CONSOLE_MIN_BINARY_SIZE)
         (out_dir / ".custom-txt-here").write_text("place custom.txt beside betterdesk binary\n")
         inject = "custom.txt"
 
