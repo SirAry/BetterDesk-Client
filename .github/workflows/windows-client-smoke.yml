@@ -1,0 +1,78 @@
+name: Windows client smoke test
+
+# Manual check of a console-generated Windows client: does it start, stay up,
+# and what do its logs and the Windows event log say.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Generated Windows x64 portable zip
+        required: true
+        default: https://rdesk.cool.bytecraft.ro/api/d/test-claude/download/windows/x64/portable
+      seconds:
+        description: How long to let the client run
+        required: true
+        default: "60"
+
+jobs:
+  smoke:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Download and extract
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "${{ inputs.url }}" -OutFile client.zip
+          Get-FileHash client.zip -Algorithm SHA256 | Format-List
+          Expand-Archive client.zip -DestinationPath client
+          Get-ChildItem client -Recurse -Depth 1 | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Run client
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem client -Recurse -Filter betterdesk.exe | Select-Object -First 1
+          $start = Get-Date
+          $p = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName -PassThru
+          $deadline = $start.AddSeconds([int]"${{ inputs.seconds }}")
+          while (-not $p.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+          if ($p.HasExited) {
+            "RESULT: exited after {0:N1}s with code {1} (0x{1:X8})" -f ((Get-Date) - $start).TotalSeconds, $p.ExitCode
+          } else {
+            "RESULT: still running after ${{ inputs.seconds }}s"
+          }
+          Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } |
+            Format-Table Id, ProcessName, MainWindowTitle, StartTime -AutoSize
+          try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            New-Item -ItemType Directory -Force out | Out-Null
+            $bmp.Save("$PWD\out\screen.png")
+          } catch { "screenshot failed: $_" }
+          Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+      - name: Collect logs
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          foreach ($root in @($env:APPDATA, $env:ProgramData, $env:LOCALAPPDATA)) {
+            Get-ChildItem $root -Recurse -Filter *.log -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match 'TEST Claude|betterdesk' } |
+              ForEach-Object {
+                "===== $($_.FullName)"
+                Get-Content $_.FullName -Tail 120
+                Copy-Item $_.FullName -Destination ("out\" + ($_.FullName -replace '[:\\ ]', '_'))
+              }
+          }
+          "===== Application event log (errors, last 15 min)"
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 1, 2; StartTime = (Get-Date).AddMinutes(-15) } -ErrorAction SilentlyContinue |
+            Format-List TimeCreated, ProviderName, Id, Message
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-client-smoke
+          path: out
