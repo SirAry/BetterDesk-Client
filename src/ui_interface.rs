@@ -1464,9 +1464,18 @@ async fn check_connect_status_(reconnect: bool, rx: mpsc::UnboundedReceiver<ipc:
                                 }
                             }
                             Ok(Some(ipc::Data::ConnectionModeChanged(Some(mode)))) => {
-                                if mode == "incoming-only" {
-                                    #[cfg(feature = "flutter")]
-                                    crate::flutter::sessions::close_outgoing_sessions();
+                                // The server answers every 1 s poll, so only act when there is
+                                // something to close. close_outgoing_sessions() reaches
+                                // ipc::update_controlling_session_count, a #[tokio::main] fn: calling
+                                // it on this runtime thread panics with "Cannot start a runtime from
+                                // within a runtime", so it runs on its own thread.
+                                #[cfg(feature = "flutter")]
+                                if mode == "incoming-only"
+                                    && !crate::flutter::sessions::get_sessions().is_empty()
+                                {
+                                    std::thread::spawn(|| {
+                                        crate::flutter::sessions::close_outgoing_sessions();
+                                    });
                                 }
                                 let mut status = UI_STATUS.lock().unwrap();
                                 status.connection_mode = mode;
