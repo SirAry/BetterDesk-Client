@@ -163,6 +163,10 @@ def pack_one(src: Path, out_dir: Path, platform: str, arch: str) -> dict:
     ensure_no_custom_txt(out_dir)
     for stale in out_dir.rglob(".custom-txt-here"):
         stale.unlink()
+    if platform == "windows":
+        # The remote printer adapter ends portable Support Agents with exit code 3
+        # about a second after start; printer_service skips the feature without it.
+        (out_dir / "printer_driver_adapter.dll").unlink(missing_ok=True)
 
     # Marker for console worker: where to place custom.txt
     if platform == "macos":

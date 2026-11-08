@@ -27,6 +27,8 @@ def main() -> int:
                 source.mkdir(parents=True)
             # Linux uses a small runner, like the real Flutter build (~44 KiB)
             binary.write_bytes(b"B" * ((44 if platform == "linux" else 100) * 1024))
+            if platform == "windows":
+                (source / "printer_driver_adapter.dll").write_bytes(b"P")
             destination = out / folder
             entries.append(pack_one(source, destination, platform, arch))
 
@@ -42,6 +44,7 @@ def main() -> int:
         validate_manifest(out, manifest)
         assert not list(out.rglob("custom.txt"))
         assert (out / "windows-x86_64" / ".custom-txt-here").is_file()
+        assert not list(out.rglob("printer_driver_adapter.dll"))
         assert (out / "macos-x86_64" / "BetterDesk.app" / "Contents" / "Resources" / ".custom-txt-here").is_file()
         assert (out / "linux-x86_64" / ".custom-txt-here").is_file()
         assert (out / "linux-x86_64" / "betterdesk").stat().st_size > 100 * 1024
