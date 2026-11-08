@@ -13,6 +13,10 @@ on:
         description: How long to let the client run
         required: true
         default: "60"
+      remove:
+        description: Comma-separated files to delete from the client folder before running
+        required: false
+        default: ""
 
 jobs:
   smoke:
@@ -31,6 +35,10 @@ jobs:
         shell: pwsh
         run: |
           $exe = Get-ChildItem client -Recurse -Filter betterdesk.exe | Select-Object -First 1
+          foreach ($name in ("${{ inputs.remove }}" -split ',' | Where-Object { $_.Trim() })) {
+            Remove-Item (Join-Path $exe.DirectoryName $name.Trim()) -Force
+            "removed $name"
+          }
           $start = Get-Date
           $p = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName -PassThru
           $deadline = $start.AddSeconds([int]"${{ inputs.seconds }}")
