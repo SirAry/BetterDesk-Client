@@ -21,6 +21,7 @@ on:
       - ".gitignore"
       - "LICENSE"
       - "PRIVACY"
+      - ".github/workflows/windows-client-smoke.yml"
   workflow_dispatch:
     inputs:
       tag_name:

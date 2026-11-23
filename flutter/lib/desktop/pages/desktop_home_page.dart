@@ -46,6 +46,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
   var systemError = '';
   StreamSubscription? _uniLinksSubscription;
+  final List<Worker> _brandingWorkers = [];
   var svcStopped = false.obs;
   var watchIsCanScreenRecording = false;
   var watchIsProcessTrust = false;
@@ -1061,6 +1062,25 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _updateWindowSize();
       });
+      // On a first launch the server branding (logo, company name, contacts)
+      // arrives after the first frame; resize again so ID and password stay visible.
+      final branding = BrandingModel.current;
+      void resizeAfterBranding(_) {
+        if (!isInHomePage()) return;
+        for (final ms in [300, 1200]) {
+          Future.delayed(Duration(milliseconds: ms), () {
+            if (mounted) _updateWindowSize();
+          });
+        }
+      }
+      _brandingWorkers.addAll([
+        ever(branding.companyName, resizeAfterBranding),
+        ever(branding.hasLogo, resizeAfterBranding),
+        ever(branding.logoEpoch, resizeAfterBranding),
+        ever(branding.phone, resizeAfterBranding),
+        ever(branding.email, resizeAfterBranding),
+        ever(branding.website, resizeAfterBranding),
+      ]);
     }
     WidgetsBinding.instance.addObserver(this);
   }
@@ -1083,6 +1103,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   void dispose() {
     _genericServerController.dispose();
     _uniLinksSubscription?.cancel();
+    for (final worker in _brandingWorkers) {
+      worker.dispose();
+    }
     Get.delete<RxBool>(tag: 'stop-service');
     _updateTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
