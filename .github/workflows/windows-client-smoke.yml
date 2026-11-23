@@ -1,14 +1,14 @@
 name: Windows client smoke test
 
-# Manual check of a console-generated Windows client: does it start, stay up,
+# Manual check of a packaged Windows client: does it start, stay up,
 # and what do its logs and the Windows event log say.
 on:
   workflow_dispatch:
     inputs:
       url:
-        description: Generated Windows x64 portable zip
+        description: Windows x64 portable client zip
         required: true
-        default: https://rdesk.cool.bytecraft.ro/api/d/test-claude/download/windows/x64/portable
+        default: https://rdesk.cool.bytecraft.ro/suport/ELNDesk-Support-1.5.0-windows-x64.zip
       seconds:
         description: How long to let the client run
         required: true
@@ -101,7 +101,7 @@ jobs:
           New-Item -ItemType Directory -Force out | Out-Null
           foreach ($root in @($env:APPDATA, $env:ProgramData, $env:LOCALAPPDATA)) {
             Get-ChildItem $root -Recurse -Filter *.log -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match 'TEST Claude|betterdesk' } |
+              Where-Object { $_.FullName -match 'ELNDesk|betterdesk' } |
               ForEach-Object {
                 "===== $($_.FullName)"
                 Get-Content $_.FullName -Tail 120
