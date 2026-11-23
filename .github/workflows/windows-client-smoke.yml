@@ -17,6 +17,10 @@ on:
         description: Comma-separated files to delete from the client folder before running
         required: false
         default: ""
+      relaunch:
+        description: Start the client a second time and take another screenshot (Y/N)
+        required: false
+        default: "N"
 
 jobs:
   smoke:
@@ -50,15 +54,25 @@ jobs:
           }
           Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } |
             Format-Table Id, ProcessName, MainWindowTitle, StartTime -AutoSize
-          try {
-            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-            New-Item -ItemType Directory -Force out | Out-Null
-            $bmp.Save("$PWD\out\screen.png")
-          } catch { "screenshot failed: $_" }
+          function Save-Screen($name) {
+            try {
+              Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+              $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+              $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+              [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+              New-Item -ItemType Directory -Force out | Out-Null
+              $bmp.Save("$PWD\out\$name")
+            } catch { "screenshot failed: $_" }
+          }
+          Save-Screen 'screen.png'
           Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } | Stop-Process -Force -ErrorAction SilentlyContinue
+          if ("${{ inputs.relaunch }}" -eq 'Y') {
+            Start-Sleep -Seconds 3
+            Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName | Out-Null
+            Start-Sleep -Seconds 30
+            Save-Screen 'screen-relaunch.png'
+            Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Collect logs
         if: always()
