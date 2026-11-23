@@ -29,6 +29,10 @@ on:
         description: Install through the zip's Instaleaza-permanent.cmd with a random permanent password (Y/N)
         required: false
         default: "N"
+      preinstall_url:
+        description: Optional older client zip to install first, so the install step becomes an upgrade
+        required: false
+        default: ""
 
 jobs:
   smoke:
@@ -85,6 +89,17 @@ jobs:
           }
           if ("${{ inputs.install }}" -eq 'Y') {
             Start-Sleep -Seconds 3
+            if ("${{ inputs.preinstall_url }}") {
+              Invoke-WebRequest -Uri "${{ inputs.preinstall_url }}" -OutFile pre.zip
+              Expand-Archive pre.zip -DestinationPath pre
+              $preExe = Get-ChildItem pre -Recurse -Include betterdesk.exe, 'ELNDesk*.exe' | Select-Object -First 1
+              $pre = Start-Process -FilePath $preExe.FullName -ArgumentList '--silent-install' -WorkingDirectory $preExe.DirectoryName -PassThru
+              $pre | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue
+              Start-Sleep -Seconds 30
+              "preinstalled $($preExe.Name), exit code $($pre.ExitCode); running before the upgrade:"
+              Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk|ELNDesk' } |
+                Format-Table Id, ProcessName, Path -AutoSize
+            }
             $installCmd = Get-ChildItem client -Recurse -Filter Instaleaza-permanent.cmd | Select-Object -First 1
             if ("${{ inputs.setpassword }}" -eq 'Y' -and $installCmd) {
               # Same path a technician takes; the password comes from the env var instead of the prompt.
@@ -101,6 +116,12 @@ jobs:
             Get-ChildItem "$env:ProgramFiles" -Directory | Where-Object { $_.Name -match 'ELND|BetterDesk|RustDesk' } | ForEach-Object {
               "installed dir: $($_.FullName)"
               Get-ChildItem $_.FullName -File | Select-Object Name, Length | Format-Table -AutoSize
+              # After an upgrade the installed files must be the new package's, not left locked.
+              foreach ($pair in @(@('betterdesk.exe', $exe.FullName), @('librustdesk.dll', (Join-Path $exe.DirectoryName 'librustdesk.dll')))) {
+                $inst = Join-Path $_.FullName $pair[0]
+                $same = (Test-Path $inst) -and ((Get-FileHash $inst).Hash -eq (Get-FileHash $pair[1]).Hash)
+                "installed $($pair[0]) matches the package: $same"
+              }
             }
             Get-Service | Where-Object { $_.Name -match 'ELND|BetterDesk|RustDesk' -or $_.DisplayName -match 'ELND|BetterDesk|RustDesk' } |
               Format-Table Name, DisplayName, Status -AutoSize
