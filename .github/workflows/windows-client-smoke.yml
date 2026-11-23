@@ -21,6 +21,10 @@ on:
         description: Start the client a second time and take another screenshot (Y/N)
         required: false
         default: "N"
+      install:
+        description: After the portable run, run --silent-install and check the installed copy (Y/N)
+        required: false
+        default: "N"
 
 jobs:
   smoke:
@@ -72,6 +76,22 @@ jobs:
             Start-Sleep -Seconds 30
             Save-Screen 'screen-relaunch.png'
             Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+          if ("${{ inputs.install }}" -eq 'Y') {
+            Start-Sleep -Seconds 3
+            $inst = Start-Process -FilePath $exe.FullName -ArgumentList '--silent-install' -WorkingDirectory $exe.DirectoryName -PassThru
+            $inst | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue
+            "install exit code: $($inst.ExitCode)"
+            Start-Sleep -Seconds 40
+            Get-ChildItem "$env:ProgramFiles" -Directory | Where-Object { $_.Name -match 'ELND|BetterDesk|RustDesk' } | ForEach-Object {
+              "installed dir: $($_.FullName)"
+              Get-ChildItem $_.FullName -File | Select-Object Name, Length | Format-Table -AutoSize
+            }
+            Get-Service | Where-Object { $_.Name -match 'ELND|BetterDesk|RustDesk' -or $_.DisplayName -match 'ELND|BetterDesk|RustDesk' } |
+              Format-Table Name, DisplayName, Status -AutoSize
+            Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } |
+              Format-Table Id, ProcessName, Path, MainWindowTitle -AutoSize
+            Save-Screen 'screen-installed.png'
           }
 
       - name: Collect logs
