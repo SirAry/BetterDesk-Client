@@ -46,7 +46,9 @@ jobs:
       - name: Run client
         shell: pwsh
         run: |
-          $exe = Get-ChildItem client -Recurse -Filter betterdesk.exe | Select-Object -First 1
+          # The launcher is betterdesk.exe, or renamed after the package (ELNDesk.exe, ELNDesk-Support.exe).
+          $exe = Get-ChildItem client -Recurse -Include betterdesk.exe, 'ELNDesk*.exe' | Select-Object -First 1
+          "launcher: $($exe.Name)"
           foreach ($name in ("${{ inputs.remove }}" -split ',' | Where-Object { $_.Trim() })) {
             Remove-Item (Join-Path $exe.DirectoryName $name.Trim()) -Force
             "removed $name"
@@ -60,7 +62,7 @@ jobs:
           } else {
             "RESULT: still running after ${{ inputs.seconds }}s"
           }
-          Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } |
+          Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk|ELNDesk' } |
             Format-Table Id, ProcessName, MainWindowTitle, StartTime -AutoSize
           function Save-Screen($name) {
             try {
@@ -73,13 +75,13 @@ jobs:
             } catch { "screenshot failed: $_" }
           }
           Save-Screen 'screen.png'
-          Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk|ELNDesk' } | Stop-Process -Force -ErrorAction SilentlyContinue
           if ("${{ inputs.relaunch }}" -eq 'Y') {
             Start-Sleep -Seconds 3
             Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName | Out-Null
             Start-Sleep -Seconds 30
             Save-Screen 'screen-relaunch.png'
-            Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk|ELNDesk' } | Stop-Process -Force -ErrorAction SilentlyContinue
           }
           if ("${{ inputs.install }}" -eq 'Y') {
             Start-Sleep -Seconds 3
@@ -102,7 +104,7 @@ jobs:
             }
             Get-Service | Where-Object { $_.Name -match 'ELND|BetterDesk|RustDesk' -or $_.DisplayName -match 'ELND|BetterDesk|RustDesk' } |
               Format-Table Name, DisplayName, Status -AutoSize
-            Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } |
+            Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk|ELNDesk' } |
               Format-Table Id, ProcessName, Path, MainWindowTitle -AutoSize
             foreach ($root in 'C:\Windows\ServiceProfiles\LocalService\AppData\Roaming', 'C:\Windows\System32\config\systemprofile\AppData\Roaming') {
               Get-ChildItem $root -Recurse -Filter '*.toml' -ErrorAction SilentlyContinue |
