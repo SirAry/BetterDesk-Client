@@ -1738,6 +1738,7 @@ copy /Y \"{tmp_path}\\{app_name} Tray.lnk\" \"%PROGRAMDATA%\\Microsoft\\Windows\
 chcp 65001
 md \"{path}\"
 {copy_exe}
+{rename_exe}
 reg add {subkey} /f
 reg add {subkey} /f /v DisplayIcon /t REG_SZ /d \"{display_icon}\"
 reg add {subkey} /f /v DisplayName /t REG_SZ /d \"{app_name}\"
@@ -1776,6 +1777,9 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
         sleep = if debug { "timeout 300" } else { "" },
         dels = if debug { "" } else { &dels },
         copy_exe = copy_exe_cmd(&src_exe, &exe, &path)?,
+        // The service and shortcuts point at `{EXE_NAME}.exe`; a launcher renamed after the
+        // package (e.g. `ELNDesk.exe`) must be renamed back, as `update_me` already does.
+        rename_exe = rename_exe_cmd(&src_exe, &path)?,
         import_config = get_import_config(&exe),
     );
     run_cmds(cmds, debug, "install")?;
@@ -1810,6 +1814,7 @@ fn get_before_uninstall(kill_self: bool) -> String {
     sc stop {app_name}
     sc delete {app_name}
     taskkill /F /IM {broker_exe}
+    taskkill /F /IM {exe_name}.exe{filter}
     taskkill /F /IM {app_name}.exe{filter}
     reg delete HKEY_CLASSES_ROOT\\.{ext} /f
     reg delete HKEY_CLASSES_ROOT\\{ext} /f
@@ -1818,6 +1823,9 @@ fn get_before_uninstall(kill_self: bool) -> String {
     netsh advfirewall firewall delete rule name=\"{app_name} Service\"
     ",
         broker_exe = WIN_TOPMOST_INJECTED_PROCESS_EXE,
+        // Installed processes run as `{EXE_NAME}.exe`, which differs from the app name of a
+        // custom client (e.g. ELNDesk-Support); a portable copy may be named after either.
+        exe_name = crate::get_exe_name(),
         uri_scheme = hbb_common::config::URI_SCHEME,
         legacy_uri_scheme = hbb_common::config::LEGACY_URI_SCHEME,
     )
@@ -3358,9 +3366,11 @@ pub fn uninstall_service(show_new_window: bool, _: bool) -> bool {
     sc delete {app_name}
     if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\" del /f /q \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\"
     taskkill /F /IM {broker_exe}
+    taskkill /F /IM {exe_name}.exe{filter}
     taskkill /F /IM {app_name}.exe{filter}
     ",
         app_name = crate::get_app_name(),
+        exe_name = crate::get_exe_name(),
         broker_exe = WIN_TOPMOST_INJECTED_PROCESS_EXE,
     );
     if let Err(err) = run_cmds(cmds, false, "uninstall") {
@@ -3393,12 +3403,14 @@ fn get_install_service_commands(path: &str, exe: &str) -> ResultType<String> {
     Ok(format!(
         "
 chcp 65001
+taskkill /F /IM {exe_name}.exe{filter}
 taskkill /F /IM {app_name}.exe{filter}
 {tray_shortcut_commands}
 copy /Y \"%RUSTDESK_OUTPUT_DIR%\\{app_name} Tray.lnk\" \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\\"
 {import_config}
 {create_service}
     ",
+        exe_name = crate::get_exe_name(),
         import_config = get_import_config(exe),
         create_service = get_create_service(exe),
     ))
@@ -3616,6 +3628,7 @@ reg add {subkey} /f /v EstimatedSize /t REG_DWORD /d {size}
         "
 chcp 65001
 sc stop {app_name}
+taskkill /F /IM {exe_name}.exe{filter}
 taskkill /F /IM {app_name}.exe{filter}
 {reg_cmd}
 {copy_exe}
@@ -3627,6 +3640,7 @@ taskkill /F /IM {app_name}.exe{filter}
 {sleep}
     ",
         app_name = app_name,
+        exe_name = crate::get_exe_name(),
         copy_exe = copy_exe_cmd(&src_exe, &exe, &path)?,
         rename_exe = rename_exe_cmd(&src_exe, &path)?,
         remove_meta_toml = remove_meta_toml_cmd(is_msi.unwrap_or(true), &path),
