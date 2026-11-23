@@ -25,6 +25,10 @@ on:
         description: After the portable run, run --silent-install and check the installed copy (Y/N)
         required: false
         default: "N"
+      setpassword:
+        description: Install through the zip's Instaleaza-permanent.cmd with a random permanent password (Y/N)
+        required: false
+        default: "N"
 
 jobs:
   smoke:
@@ -79,9 +83,18 @@ jobs:
           }
           if ("${{ inputs.install }}" -eq 'Y') {
             Start-Sleep -Seconds 3
-            $inst = Start-Process -FilePath $exe.FullName -ArgumentList '--silent-install' -WorkingDirectory $exe.DirectoryName -PassThru
-            $inst | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue
-            "install exit code: $($inst.ExitCode)"
+            $installCmd = Get-ChildItem client -Recurse -Filter Instaleaza-permanent.cmd | Select-Object -First 1
+            if ("${{ inputs.setpassword }}" -eq 'Y' -and $installCmd) {
+              # Same path a technician takes; the password comes from the env var instead of the prompt.
+              $env:ELNDESK_PAROLA = [guid]::NewGuid().ToString('N').Substring(0, 12)
+              cmd.exe /c "$($installCmd.FullName) < NUL"
+              "install script exit code: $LASTEXITCODE"
+              Remove-Item Env:ELNDESK_PAROLA
+            } else {
+              $inst = Start-Process -FilePath $exe.FullName -ArgumentList '--silent-install' -WorkingDirectory $exe.DirectoryName -PassThru
+              $inst | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue
+              "install exit code: $($inst.ExitCode)"
+            }
             Start-Sleep -Seconds 40
             Get-ChildItem "$env:ProgramFiles" -Directory | Where-Object { $_.Name -match 'ELND|BetterDesk|RustDesk' } | ForEach-Object {
               "installed dir: $($_.FullName)"
@@ -91,6 +104,13 @@ jobs:
               Format-Table Name, DisplayName, Status -AutoSize
             Get-Process | Where-Object { $_.ProcessName -match 'betterdesk|rustdesk' } |
               Format-Table Id, ProcessName, Path, MainWindowTitle -AutoSize
+            foreach ($root in 'C:\Windows\ServiceProfiles\LocalService\AppData\Roaming', 'C:\Windows\System32\config\systemprofile\AppData\Roaming') {
+              Get-ChildItem $root -Recurse -Filter '*.toml' -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match 'ELND' -and $_.Name -notmatch '(_local|2)\.toml$' } | ForEach-Object {
+                  $m = Select-String -Path $_.FullName -Pattern "^password = '(.+)'" | Select-Object -First 1
+                  "service config $($_.FullName): permanent password set = $([bool]$m)"
+                }
+            }
             Save-Screen 'screen-installed.png'
           }
 
