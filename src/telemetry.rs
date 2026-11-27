@@ -218,7 +218,7 @@ pub fn seal_payload(
         Ok(value) => value,
         Err(_) => 0,
     };
-    let sequence = current_sequence.saturating_add(1);
+    let sequence = next_sequence(current_sequence, unix_millis());
     LocalConfig::set_option(TELEMETRY_SEQUENCE.to_owned(), sequence.to_string());
 
     let ephemeral_public = STANDARD.encode(ephemeral_public.0);
@@ -247,6 +247,20 @@ pub fn seal_payload(
         "ciphertext": ciphertext_value,
         "signature": STANDARD.encode(signature.as_ref()),
     }))
+}
+
+fn unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+// The server keeps one replay counter per device ID, but the service and the UI
+// can run as different OS users with separate LocalConfig files (Windows).
+// Anchoring the sequence to the clock keeps them in the same range.
+fn next_sequence(stored: u64, now_millis: u64) -> u64 {
+    stored.saturating_add(1).max(now_millis)
 }
 
 fn response_keypair() -> Result<(box_::PublicKey, box_::SecretKey), String> {
@@ -1001,6 +1015,13 @@ pub fn process_commands(commands: &[Value]) -> Vec<Value> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sequence_follows_clock_and_stays_monotonic() {
+        assert_eq!(super::next_sequence(13, 1_000_000), 1_000_000);
+        assert_eq!(super::next_sequence(1_000_000, 1_000_000), 1_000_001);
+        assert_eq!(super::next_sequence(2_000_000, 1_000_000), 2_000_001);
+    }
+
     use super::*;
 
     #[test]
